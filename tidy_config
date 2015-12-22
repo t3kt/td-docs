@@ -1,0 +1,5 @@
+output-xml: yes
+add-xml-decl: no
+indent: yes
+drop-font-tags: yes
+quote-nbsp: no
