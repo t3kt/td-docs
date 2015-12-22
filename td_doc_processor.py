@@ -22,6 +22,9 @@ def removeByIds(soup, *ids):
   for i in ids:
     removeTags(soup.find_all(id=i))
 
+def cleanString(s):
+  s = re.sub(' {2,}', '', s)
+  return re.sub('\n*', '', s)
 
 def cleanPageUrl(url):
   if not url:
@@ -57,6 +60,13 @@ class CategoryChunkPageParser:
       info['prev'] = cleanPageUrl(prevTag['href'])
     if nextTag:
       info['next'] = cleanPageUrl(nextTag['href'])
+    if page.soup.find_all('em', string='This category currently contains no pages or media'):
+      info['empty'] = True
+    else:
+      table = page.soup.find(id='mw-content-text').find(**{"class":"mw-content-ltr"})
+      if table:
+        contents = [cleanString(link.text) for link in table.find_all('a')]
+        info['contents'] = contents
     return info
 
 class PyClassPageParser:
@@ -228,34 +238,89 @@ class WikiPageSet:
 
   def loadPages(self, fpaths):
     for fpath in fpaths:
+      sys.stderr.write('loading page %s...\n' % (fpath,))
       page = WikiPage.loadPage(fpath)
       self.addPage(page)
+    for group in self.categoryPageGroups.values():
+      group.linkPages()
+      group.indexSubjects()
 
-  def dumpInfo(self):
-    print('WikiPageSet:')
+  def dumpInfo(self, out):
+    out.write('WikiPageSet:\n')
     for pageType in self.pagesByType:
-      print('  [%s]' % (pageType,))
+      out.write('  [%s]\n' % (pageType,))
       pages = self.pagesByType[pageType]
       for page in _sortPagesByFilename(pages):
-        print('    %s' % (page,))
-    print(' category groups:')
+        out.write('    %s\n' % (page,))
+    out.write(' category groups:\n')
     for group in self.categoryPageGroups.values():
-      group.dumpInfo()
+      group.dumpInfo(out)
 
 class CategoryPageGroup:
   def __init__(self, name):
     self.name = name
     self.pagesByFilename = {}
     self.pages = []
+    self.subjectsToPages = {}
+    self.redundantPages = []
 
   def addPage(self, page):
     self.pages.append(page)
     self.pagesByFilename[page.fname] = page
 
-  def dumpInfo(self):
-    print('  [category group: %s]' % (self.name,))
+  def linkPages(self):
     for page in self.pages:
-      print('    %s' % (page,))
+      prevName = page.pageInfo.get('prev')
+      nextName = page.pageInfo.get('next')
+      page.prevPage = self.pagesByFilename.get(prevName) if prevName else None
+      page.nextPage = self.pagesByFilename.get(nextName) if nextName else None
+
+  def indexSubjects(self):
+    for page in self.pages:
+      contents = page.pageInfo.get('contents')
+      if contents:
+        for subject in contents:
+          _addToMultiDict(self.subjectsToPages, subject, page)
+
+  def extractRedundantPages(self):
+    firsts = self.findFirsts()
+    if len(firsts) <= 1:
+      self.redundantPages = []
+    else:
+      raise NotImplementedError()
+
+  # def findRedundantFirstPages(self):
+  #   firsts = self.findFirsts()
+  #   if len(firsts) <= 1:
+  #     return []
+  #   return max(firsts, key=lambda p: len(p.pageInfo['contents']))
+
+  def findFirsts(self):
+    return [page for page in self.pages if page.prevPage is None]
+
+  @staticmethod
+  def _getNameChain(firstPage):
+    names = []
+    page = firstPage
+    while page:
+      names.append(page.fname)
+      page = page.nextPage
+    return names
+
+  def dumpInfo(self, out):
+    out.write('  [category group: %s]\n' % (self.name,))
+    for page in self.pages:
+      out.write('    %s\n' % (page,))
+    out.write('    first pages:\n')
+    for page in self.findFirsts():
+      out.write('      %s\n' % (page,))
+      out.write('         %s\n' % (CategoryPageGroup._getNameChain(page)))
+    out.write('    pages by subject:\n')
+    for subject in self.subjectsToPages:
+      out.write('      %s: ' % (subject,))
+      for page in self.subjectsToPages[subject]:
+        out.write(' %s' % (page.fname,))
+      out.write('\n')
 
 
 def main():
@@ -277,7 +342,7 @@ def main():
   elif action == 'getinfo':
     pageSet = WikiPageSet()
     pageSet.loadPages(fpaths)
-    pageSet.dumpInfo()
+    pageSet.dumpInfo(sys.stdout)
   else:
     raise Exception('unsupported action: ' + action)
 
