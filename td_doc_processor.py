@@ -287,6 +287,16 @@ class CategoryPageGroup:
     if len(firsts) <= 1:
       self.redundantPages = []
     else:
+      self.redundantPages = []
+      realPages = list(self.pages)
+      firsts = self.findFirsts()
+      densestFirst = min(firsts, key=lambda p: len(CategoryPageGroup._getChain(p)))
+      for first in firsts:
+        chain = CategoryPageGroup._getChain(first)
+        if first is densestFirst:
+          realPages = chain
+        else:
+          pass
       raise NotImplementedError()
 
   # def findRedundantFirstPages(self):
@@ -299,13 +309,13 @@ class CategoryPageGroup:
     return [page for page in self.pages if page.prevPage is None]
 
   @staticmethod
-  def _getNameChain(firstPage):
-    names = []
+  def _getChain(firstPage):
+    chain = []
     page = firstPage
     while page:
-      names.append(page.fname)
+      chain.append(page)
       page = page.nextPage
-    return names
+    return chain
 
   def dumpInfo(self, out):
     out.write('  [category group: %s]\n' % (self.name,))
@@ -314,7 +324,7 @@ class CategoryPageGroup:
     out.write('    first pages:\n')
     for page in self.findFirsts():
       out.write('      %s\n' % (page,))
-      out.write('         %s\n' % (CategoryPageGroup._getNameChain(page)))
+      out.write('         %s\n' % ([page.fname for page in CategoryPageGroup._getChain(page)]))
     out.write('    pages by subject:\n')
     for subject in self.subjectsToPages:
       out.write('      %s: ' % (subject,))
