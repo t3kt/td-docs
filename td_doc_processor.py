@@ -6,6 +6,7 @@ import re
 import os
 import os.path
 import argparse
+import json
 
 def removeTags(tags):
   for tag in tags:
@@ -238,11 +239,11 @@ class WikiPageSet:
       'pages': [page.toDict() for page in self.pagesByFilename.values()],
       'pageTypes': {
         pageType: [page.fname for page in typePages]
-        for (pageType, typePages) in self.pagesByType
+        for (pageType, typePages) in self.pagesByType.items()
       },
       'categoryGroups': {
         groupName: group.toDict()
-        for (groupName, group) in self.categoryPageGroups
+        for (groupName, group) in self.categoryPageGroups.items()
       }
     }
 
@@ -379,20 +380,17 @@ class CategoryPageGroup:
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('action', choices=['clean', 'cleanall', 'getinfo'])
+  parser.add_argument('action', choices=['clean', 'cleanall', 'getinfo', 'buildindex'])
   parser.add_argument('files', type=str, nargs='+')
   parser.add_argument('--outdir')
+  parser.add_argument('--index')
   args = parser.parse_args()
 
   if args.action == 'clean':
     if len(args.files) > 1:
       raise Exception('Cleaning multiple files not currently supported')
-    fpath = args.files[0]
-
-    page = WikiPage.loadPage(fpath)
-
+    page = WikiPage.loadPage(args.files[0])
     page.clean()
-
     page.write(sys.stdout)
   elif args.action == 'cleanall':
     if not args.outdir:
@@ -406,7 +404,14 @@ def main():
       print('writing cleaned page %s -> %s' % (fpath, outfpath))
       with open(outfpath, 'w') as outfile:
         page.write(outfile)
-    pass
+  elif args.action == 'buildindex':
+    if not args.index:
+      raise Exception('Index file must be specified')
+    pageSet = WikiPageSet()
+    pageSet.loadPages(args.files)
+    print('writing page set index to %s' % (args.index,))
+    with open(args.index, 'w') as f:
+      json.dump(pageSet.toDict(), f, indent=2, sort_keys=True)
   elif args.action == 'getinfo':
     pageSet = WikiPageSet()
     pageSet.loadPages(args.files)
