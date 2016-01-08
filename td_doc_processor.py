@@ -3,8 +3,9 @@
 import sys
 from bs4 import BeautifulSoup
 import re
+import os
 import os.path
-from optparse import OptionParser
+import argparse
 
 def removeTags(tags):
   for tag in tags:
@@ -200,6 +201,16 @@ class WikiPage:
     return 'WikiPage(fname: %s, pageType: %s, title: %s, info: %s)' % (
       self.fname, self.pageType, self.title, self .pageInfo)
 
+  def toDict(self):
+    return {
+      'fpath': self.fpath,
+      'fname': self.fname,
+      'title': self.title,
+      'pageType': self.pageType,
+      'pageInfo': self.pageInfo,
+      'contents': self.soup.prettify('utf-8', formatter='xml')
+    }
+
   @staticmethod
   def loadPage(fpath):
     with open(fpath) as f:
@@ -221,6 +232,19 @@ class WikiPageSet:
     self.pagesByFilename = {}
     self.pagesByType = {}
     self.categoryPageGroups = {}
+
+  def toDict(self):
+    return {
+      'pages': [page.toDict() for page in self.pagesByFilename.values()],
+      'pageTypes': {
+        pageType: [page.fname for page in typePages]
+        for (pageType, typePages) in self.pagesByType
+      },
+      'categoryGroups': {
+        groupName: group.toDict()
+        for (groupName, group) in self.categoryPageGroups
+      }
+    }
 
   def _getOrAddCategoryGroup(self, name):
     if name in self.categoryPageGroups:
@@ -264,6 +288,16 @@ class CategoryPageGroup:
     self.subjectsToPages = {}
     self.redundantPages = []
 
+  def toDict(self):
+    return {
+      'name': self.name,
+      'pages': self.pagesByFilename.keys(),
+      'subjects': {
+        subject: [page.fname for page in subjPages]
+        for (subject, subjPages) in self.subjectsToPages.items()
+      }
+    }
+
   def addPage(self, page):
     self.pages.append(page)
     self.pagesByFilename[page.fname] = page
@@ -282,13 +316,14 @@ class CategoryPageGroup:
         for subject in contents:
           _addToMultiDict(self.subjectsToPages, subject, page)
 
-  def extractRedundantPages(self):
+  def separateRealAndRedundantPages(self):
     firsts = self.findFirsts()
     if len(firsts) <= 1:
-      self.redundantPages = []
-    else:
-      self.redundantPages = []
+      redundantPages = []
       realPages = list(self.pages)
+    else:
+      realPages = []
+      redundantPages = []
       firsts = self.findFirsts()
       densestFirst = min(firsts, key=lambda p: len(CategoryPageGroup._getChain(p)))
       for first in firsts:
@@ -296,8 +331,10 @@ class CategoryPageGroup:
         if first is densestFirst:
           realPages = chain
         else:
-          pass
-      raise NotImplementedError()
+          redundantPages += chain
+      print('found %i/%i real pages and %i/%i redundant pages' % (len(realPages), len(self.pages), len(redundantPages), len(self.pages)))
+    return realPages, redundantPages
+    #raise NotImplementedError()
 
   # def findRedundantFirstPages(self):
   #   firsts = self.findFirsts()
@@ -331,30 +368,51 @@ class CategoryPageGroup:
       for page in self.subjectsToPages[subject]:
         out.write(' %s' % (page.fname,))
       out.write('\n')
+    realPages, redundantPages = self.separateRealAndRedundantPages()
+    out.write('    real pages:\n')
+    for page in realPages:
+      out.write('         %s\n' % page.fname)
+    out.write('    redundant pages:\n')
+    for page in redundantPages:
+      out.write('         %s\n' % page.fname)
 
 
 def main():
-  optParser = OptionParser()
-  action = sys.argv[1]
+  parser = argparse.ArgumentParser()
+  parser.add_argument('action', choices=['clean', 'cleanall', 'getinfo'])
+  parser.add_argument('files', type=str, nargs='+')
+  parser.add_argument('--outdir')
+  args = parser.parse_args()
 
-  options, fpaths = optParser.parse_args(sys.argv[2:])
-
-  if action == 'clean':
-    if len(fpaths) > 1:
+  if args.action == 'clean':
+    if len(args.files) > 1:
       raise Exception('Cleaning multiple files not currently supported')
-    fpath = fpaths[0]
+    fpath = args.files[0]
 
     page = WikiPage.loadPage(fpath)
 
     page.clean()
 
     page.write(sys.stdout)
-  elif action == 'getinfo':
+  elif args.action == 'cleanall':
+    if not args.outdir:
+      raise Exception('Output directory must be specified')
+    if not os.path.exists(args.outdir):
+      os.makedirs(args.outdir)
+    for fpath in args.files:
+      page = WikiPage.loadPage(fpath)
+      outfpath = os.path.join(args.outdir, page.fname)
+      page.clean()
+      print('writing cleaned page %s -> %s' % (fpath, outfpath))
+      with open(outfpath, 'w') as outfile:
+        page.write(outfile)
+    pass
+  elif args.action == 'getinfo':
     pageSet = WikiPageSet()
-    pageSet.loadPages(fpaths)
+    pageSet.loadPages(args.files)
     pageSet.dumpInfo(sys.stdout)
   else:
-    raise Exception('unsupported action: ' + action)
+    raise Exception('unsupported action: ' + args.action)
 
 if __name__ == '__main__':
   main()
