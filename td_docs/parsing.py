@@ -119,16 +119,15 @@ def _extractPageType(title):
   return 'other'
 
 def loadWikiPage(fpath):
-  soup = _loadFileSoup(fpath)
-  fname = os.path.split(fpath)[1]
+  soup = utils.loadFileSoup(fpath)
   title = _cleanTitleRx.sub('', soup.title.text.strip())
   pageType = _extractPageType(title)
-  pageInfo = _parsePageInfo(pageType, title, soup)
-  return model.WikiPage(fname, title, pageType, pageInfo)
-
-def _loadFileSoup(fpath):
-  with open(fpath) as f:
-    return BeautifulSoup(f, 'html.parser')
+  return model.WikiPage(
+      fname=os.path.split(fpath)[1],
+      title=title,
+      pageType=pageType,
+      pageInfo=_parsePageInfo(pageType, title, soup),
+      soup=soup)
 
 def loadWikiPageSet(fpaths):
   pageSet = WikiPageSet()

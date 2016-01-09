@@ -1,5 +1,5 @@
 import re
-
+from bs4 import BeautifulSoup
 
 def cleanString(s):
   s = re.sub(' {2,}', '', s)
@@ -17,3 +17,7 @@ def addToMultiDict(d, key, val):
     d[key].append(val)
   else:
     d[key] = [val]
+
+def loadFileSoup(fpath):
+  with open(fpath) as f:
+    return BeautifulSoup(f, 'html.parser')
